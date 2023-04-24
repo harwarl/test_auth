@@ -1,9 +1,10 @@
-import { createUser, validateUser, getGoogleAuthorizationUrl, getGoogleUserData, findAndUpdateUser } from "../service/user.services.js";
+import { createUser, validateUser, getGoogleAuthorizationUrl, getGoogleUserData, findAndUpdateUser, getFacebookUrl, getFacebookUserData } from "../service/user.services.js";
 import { createAccessToken, createSession } from "../service/session.services.js"
 import pkg from 'lodash';
 import axios from 'axios';
 import qs from 'qs';
 import { signToken } from "../utils/jwt.utils.js";
+import { config } from "../utils/config.js";
 
 const { get, pick, omit } = pkg;
 
@@ -35,6 +36,27 @@ export async function signin(req, res, next){
     res.setHeader('Authorization', access_token);
     const refresh_token = signToken(session, {expiresIn: '1y'});
     res.setHeader('x-refresh', refresh_token);
+
+    //create cookies
+    res.cookie(
+        'accessToken', accessToken, {
+            maxAge: 90000,//15mins
+            httpOnly: true,
+            domain: 'localhost',
+            path: '/',
+            sameSite: 'strict',
+            secure: false
+        }
+    )
+
+    res.cookie('refreshToken', refreshToken, {
+        maxAge: 3.154e10, //1 year
+        httpOnly: true,
+        domain: 'localhost',
+        path:'/',
+        sameSite: 'strict',
+        secure: false
+    })
 
     res.status(200).send({access_token, refresh_token});
 }
@@ -99,25 +121,58 @@ export async function getGoogleUserInfo(req, res, next){
         sameSite: 'strict',
         secure: false
     })
+
+    res.status(200).send({accessToken, refreshToken});
 }
 
 export async function facebookSignIn(req, res, next){
-    const fb_url = 'https://www.facebook.com/v16.0/dialog/oauth'
-    const config = {
-        params: {
-            client_id: '905302157364048',
-            redirect_uri: "http://localhost:3000/api/auth/fb/callback",
-            state: "{st: bubu}"
-        }
-    }
-    try{
-        const res = await axios.get(fb_url, config)
-        console.log(res.data);
-    }catch(error){
-        console.log(error.message)
-    }
+    const { facebookUrl } = await getFacebookUrl();
+    return res.status(301).redirect(facebookUrl);
 }
 
 export async function getFacebookUserInfo(req, res, next){
+    const { code } = req.query;
+    
+    const user_data = await getFacebookUserData({ code })
 
+    if(!user_data){
+        return res.status(403).send('Email not verified');
+    }
+
+    const user_saved = await findAndUpdateUser({name: user_data.name}, {
+        name: user_data.name
+    }, {
+        upsert: true,
+        new: true
+    })
+
+    //create a session
+    const userAgent = req.get('user-agent');
+    const session = await createSession(user_saved, userAgent || "");
+
+    //create access and RefreshToken
+    const accessToken = await createAccessToken({user_saved, session});
+    const refreshToken = signToken(session, {expiresIn: '1y'});
+
+    //create cookies
+    res.cookie(
+        'accessToken', accessToken, {
+            maxAge: 90000,//15mins
+            httpOnly: true,
+            domain: 'localhost',
+            path: '/',
+            sameSite: 'strict',
+            secure: false
+        }
+    )
+
+    res.cookie('refreshToken', refreshToken, {
+        maxAge: 3.154e10, //1 year
+        httpOnly: true,
+        domain: 'localhost',
+        path:'/',
+        sameSite: 'strict',
+        secure: false
+    })
+    res.status(200).send({accessToken, refreshToken});
 }
