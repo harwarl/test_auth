@@ -9,6 +9,8 @@ const app = express();
 app.use(bodyParser.urlencoded({extended: false}));
 app.use(bodyParser.json());
 
+
+//just for cors
 app.use(cors({
     allowedHeaders: ['Authorization', 'Content-Type'],
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'OPTIONS', 'DELETE'],
